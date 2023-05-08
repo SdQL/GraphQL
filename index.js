@@ -1,5 +1,6 @@
-import {ApolloServer, gql} from "apollo-server"
+import {ApolloServer, UserInputError, gql} from "apollo-server"
 import {v1 as uuid} from 'uuid'
+
 const persons = [
     {
         name: "Maria",
@@ -24,6 +25,11 @@ const persons = [
 ];
 
 const typeDefinitions = gql`
+    enum YesNo {
+        YES
+        NO
+    }
+    
     type Address {
         street: String!
         city: String!
@@ -38,7 +44,7 @@ const typeDefinitions = gql`
     
     type Query {
         countPersons: Int!
-        getAllPersons: [Person]!
+        getAllPersons(phone: YesNo): [Person]!
         getPhoneByName(name: String!): Person
     }
     
@@ -67,7 +73,15 @@ const typeDefinitions = gql`
 const resolvers = {
     Query: {
         countPersons: () => persons.length,
-        getAllPersons: () => persons,
+        getAllPersons: (root, args) => {
+            if (!args.phone) return persons // Si no se pasa el argumento phone en la query, devuelve todas las personas
+
+            const byPhone = person => // Constante que nos permite filtrar por teléfono para obtener solo los que tienen teléfono
+                args.phone === "YES" ? person.phone : !person.phone // Si el argumento es YES, devuelve los que tienen teléfono, si no, los que no tienen teléfono
+
+            return persons.filter(byPhone) // Filtramos el array de personas con la constante que creamos
+
+        },
         getPhoneByName: (root, args) => {
             const {name} = args;
             return persons.find(person => person.name === name)
@@ -76,6 +90,11 @@ const resolvers = {
 
     Mutation: {
         addPerson: (root, args) => {
+            if (persons.find(p => p.name === args.name)) { // Controlamos que no se repita el nombre en el array
+                throw new UserInputError('Este nombre ya existe.', {
+                    invalidArgs: args.name,
+                })
+            }
             const person = {...args, id: uuid()}
             persons.push(person)
             return person
