@@ -1,28 +1,7 @@
 import {ApolloServer, UserInputError, gql} from "apollo-server"
 import {v1 as uuid} from 'uuid'
+import axios from 'axios'
 
-const persons = [
-    {
-        name: "Maria",
-        phone: "555-1234",
-        street: "Calle 5 de Mayo",
-        city: "Ciudad de México",
-        id: "12345"
-    },
-    {
-        name: "Juan",
-        phone: "555-5678",
-        street: "Avenida del Sol",
-        city: "Lima",
-        id: "67890"
-    },
-    {
-        name: "Emily",
-        street: "Main Street",
-        city: "Nueva York",
-        id: "24680"
-    }
-];
 
 const typeDefinitions = gql`
     enum YesNo {
@@ -72,57 +51,73 @@ const typeDefinitions = gql`
 
 const resolvers = {
     Query: {
-        countPersons: () => persons.length,
-        getAllPersons: (root, args) => {
-            if (!args.phone) return persons // Si no se pasa el argumento phone en la query, devuelve todas las personas
+        countPersons: async () => {
+            const {data: personsFromRestApi} = await axios.get('http://localhost:3000/persons') // Obtenemos los datos de la API REST
+            return personsFromRestApi.length // Devolvemos la longitud del array de personas
+        },
+        getAllPersons: async (root, args) => {
+
+            const {data: personsFromRestApi} = await axios.get('http://localhost:3000/persons') // Obtenemos los datos de la API REST
+
+            if (!args.phone) return personsFromRestApi // Si no se pasa el argumento phone en la query, devuelve todas las personas
 
             const byPhone = person => // Constante que nos permite filtrar por teléfono para obtener solo los que tienen teléfono
                 args.phone === "YES" ? person.phone : !person.phone // Si el argumento es YES, devuelve los que tienen teléfono, si no, los que no tienen teléfono
 
-            return persons.filter(byPhone) // Filtramos el array de personas con la constante que creamos
+            return personsFromRestApi.filter(byPhone) // Filtramos el array de personas con la constante que creamos
 
         },
-        getPhoneByName: (root, args) => {
+        getPhoneByName: async (root, args) => {
+            const {data: personsFromRestApi} = await axios.get('http://localhost:3000/persons') // Obtenemos los datos de la API REST
             const {name} = args;
-            return persons.find(person => person.name === name)
+            return personsFromRestApi.find(person => person.name === name)
         }
     },
 
     Mutation: {
-        addPerson: (root, args) => {
-            if (persons.find(p => p.name === args.name)) { // Controlamos que no se repita el nombre en el array
+        addPerson: async (root, args) => {
+            const {data: personsFromRestApi} = await axios.get('http://localhost:3000/persons') // Obtenemos los datos de la API REST
+
+            if (personsFromRestApi.find(p => p.name === args.name)) { // Controlamos que no se repita el nombre en el array
                 throw new UserInputError('Este nombre ya existe.', {
                     invalidArgs: args.name,
                 })
             }
             const person = {...args, id: uuid()}
-            persons.push(person)
+            await axios.post('http://localhost:3000/persons', person) // Añadimos la persona a la API REST
             return person
         },
 
-        deletePerson: (root, args) => {
+        deletePerson: async (root, args) => {
+            const {data: personsFromRestApi} = await axios.get('http://localhost:3000/persons') // Obtenemos los datos de la API REST
             const { name } = args;
-            const index = persons.findIndex(person => person.name === name);
-            if (index !== -1) {
-                const deletedPerson = persons.splice(index, 1)[0];
-                return deletedPerson;
+            const personToDelete = personsFromRestApi.find(person => person.name === name);
+
+            if (!personToDelete) {
+                throw new UserInputError('No se encontró la persona a eliminar', {
+                    invalidArgs: args.name,
+                });
             }
+
+            await axios.delete(`http://localhost:3000/persons/${personToDelete.id}`) // Eliminar objeto mediante solicitud DELETE
+            return personToDelete;
         },
 
-        updatePerson: (parent, args) => {
+        updatePerson: async (parent, args) => {
+            const {data: personsFromRestApi} = await axios.get('http://localhost:3000/persons') // Obtenemos los datos de la API REST
             const { id, name, phone, street, city } = args;
-            const index = persons.findIndex(person => person.id === id);
+            const index = personsFromRestApi.findIndex(person => person.id === id);
             if (index === -1) {
                 throw new Error(`No se pudo encontrar a la persona con el ID ${id}`);
             }
             const updatedPerson = {
-                ...persons[index],
-                name: name !== undefined ? name : persons[index].name,
-                phone: phone !== undefined ? phone : persons[index].phone,
-                street: street !== undefined ? street : persons[index].street,
-                city: city !== undefined ? city : persons[index].city
+                ...personsFromRestApi[index],
+                name: name !== undefined ? name : personsFromRestApi[index].name,
+                phone: phone !== undefined ? phone : personsFromRestApi[index].phone,
+                street: street !== undefined ? street : personsFromRestApi[index].street,
+                city: city !== undefined ? city : personsFromRestApi[index].city
             };
-            persons[index] = updatedPerson;
+            await axios.put(`http://localhost:3000/persons/${id}`, updatedPerson) // Actualizar objeto mediante solicitud PUT
             return updatedPerson;
         }
 
